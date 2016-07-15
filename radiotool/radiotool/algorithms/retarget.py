@@ -20,7 +20,7 @@ class ArgumentException(Exception):
     pass
 
 
-def retarget_to_length(song, duration, start=True, end=True, slack=5,
+def retarget_to_length(songs, duration, start=True, end=True, slack=5,
                        beats_per_measure=None):
     """Create a composition of a song that changes its length
     to a given duration.
@@ -46,14 +46,14 @@ def retarget_to_length(song, duration, start=True, end=True, slack=5,
     constraints = [
         rt_constraints.TimbrePitchConstraint(
             context=0, timbre_weight=1.0, chroma_weight=1.0),
-        rt_constraints.EnergyConstraint(penalty=.5),
-        rt_constraints.MinimumLoopConstraint(8),
+            rt_constraints.EnergyConstraint(penalty=.5),
+            rt_constraints.MinimumLoopConstraint(8)
     ]
 
-    if beats_per_measure is not None:
-        constraints.append(
-            rt_constraints.RhythmConstraint(beats_per_measure, .125))
-
+    # if beats_per_measure is not None:
+    #     constraints.append(
+    #         rt_constraints.RhythmConstraint(beats_per_measure, .125))
+    #
     if start:
         constraints.append(
             rt_constraints.StartAtStartConstraint(padding=0))
@@ -63,19 +63,19 @@ def retarget_to_length(song, duration, start=True, end=True, slack=5,
             rt_constraints.EndAtEndConstraint(padding=slack))
 
     comp, info = retarget(
-        [song], duration, constraints=[constraints],
+        songs, duration, constraints=constraints,
         fade_in_len=None, fade_out_len=None)
 
     # force the new track to extend to the end of the song
-    if end:
-        last_seg = sorted(
-            comp.segments,
-            key=lambda seg:
-            seg.comp_location_in_seconds + seg.duration_in_seconds
-        )[-1]
-
-        last_seg.duration_in_seconds = (
-            song.duration_in_seconds - last_seg.start_in_seconds)
+    # if end:
+    #     last_seg = sorted(
+    #         comp.segments,
+    #         key=lambda seg:
+    #         seg.comp_location_in_seconds + seg.duration_in_seconds
+    #     )[-1]
+    #
+    #     last_seg.duration_in_seconds = (
+    #         song.duration_in_seconds - last_seg.start_in_seconds)
 
     path_cost = info["path_cost"]
     total_nonzero_cost = []
@@ -305,55 +305,56 @@ def retarget(songs, duration, music_labels=None, out_labels=None,
         ) for in_va in in_vas]
     else:
         max_pause_beats = 0
-        if len(constraints) > 0:
-            if isinstance(constraints[0], rt_constraints.Constraint):
-                constraints = [constraints]
+        # if len(constraints) > 0:
+        #     if isinstance(constraints[0], rt_constraints.Constraint):
+        #         constraints = [constraints]
 
-    pipelines = [rt_constraints.ConstraintPipeline(constraints=c_set)
-                 for c_set in constraints]
+    pipeline = rt_constraints.ConstraintPipeline(constraints=constraints)
+
 
     trans_costs = []
     penalties = []
     all_beat_names = []
-
-    for i, song in enumerate(songs):
-        (trans_cost, penalty, bn) = pipelines[i].apply(song, len(target))
-        trans_costs.append(trans_cost)
-        penalties.append(penalty)
-        all_beat_names.append(bn)
-
+    (trans_cost, penalty, all_beat_names) = pipeline.applyModified(songs, len(target))
+    # trans_costs.append(trans_cost)
+    # penalties.append(penalty)
+    # all_beat_names.append(bn)
+    # len1 = 13
+    # temp = [[5.0 for _ in range(len1)] for _ in range(len1)]
+    # trans_cost[10:23, 10:23] += np.array(temp)
     logging.info("Combining tables")
+
     total_music_beats = int(np.sum([len(b) for b in beats]))
     total_beats = total_music_beats + max_pause_beats
 
     # combine transition cost tables
 
-    trans_cost = np.ones((total_beats, total_beats)) * np.inf
-    sizes = [len(b) for b in beats]
-    idx = 0
-    for i, size in enumerate(sizes):
-        trans_cost[idx:idx + size, idx:idx + size] =\
-            trans_costs[i][:size, :size]
-        idx += size
+    #trans_cost = np.ones((total_beats, total_beats)) * np.inf
+    #sizes = [len(b) for b in beats]
+    # idx = 0
+    # for i, size in enumerate(sizes):
+    #     trans_cost[idx:idx + size, idx:idx + size] =\
+    #         trans_costs[i][:size, :size]
+    #     idx += size
 
-    trans_cost[:total_music_beats, total_music_beats:] =\
-        np.vstack([tc[:len(beats[i]), len(beats[i]):]
-                   for i, tc in enumerate(trans_costs)])
-
-    trans_cost[total_music_beats:, :total_music_beats] =\
-        np.hstack([tc[len(beats[i]):, :len(beats[i])]
-                  for i, tc in enumerate(trans_costs)])
-
-    trans_cost[total_music_beats:, total_music_beats:] =\
-        trans_costs[0][len(beats[0]):, len(beats[0]):]
-
-    # combine penalty tables
-    penalty = np.empty((total_beats, penalties[0].shape[1]))
-
-    penalty[:total_music_beats, :] =\
-        np.vstack([p[:len(beats[i]), :] for i, p in enumerate(penalties)])
-
-    penalty[total_music_beats:, :] = penalties[0][len(beats[0]):, :]
+    # trans_cost[:total_music_beats, total_music_beats:] =\
+    #     np.vstack([tc[:len(beats[i]), len(beats[i]):]
+    #                for i, tc in enumerate(trans_costs)])
+    #
+    # trans_cost[total_music_beats:, :total_music_beats] =\
+    #     np.hstack([tc[len(beats[i]):, :len(beats[i])]
+    #               for i, tc in enumerate(trans_costs)])
+    #
+    # trans_cost[total_music_beats:, total_music_beats:] =\
+    #     trans_costs[0][len(beats[0]):, len(beats[0]):]
+    #
+    # # combine penalty tables
+    # penalty = np.empty((total_beats, penalties[0].shape[1]))
+    #
+    # penalty[:total_music_beats, :] =\
+    #     np.vstack([p[:len(beats[i]), :] for i, p in enumerate(penalties)])
+    #
+    # penalty[total_music_beats:, :] = penalties[0][len(beats[0]):, :]
 
     logging.info("Building cost table")
 
@@ -398,9 +399,18 @@ def retarget(songs, duration, music_labels=None, out_labels=None,
     song_starts = np.array(song_starts[:-1], dtype=np.int32)
 
     t1 = time.clock()
+    song_starts = np.array([0],dtype=np.int32)
+    song_ends = np.array([len(songs[0].analysis["beats"]) + len(songs[1].analysis["beats"])],dtype=np.int32)
+
+
     path_i, path_cost = build_table_full_backtrace(
         tc2, pen2, song_starts, song_ends,
         first_pause=first_pause, max_beats=max_beats, min_beats=min_beats)
+
+    # len1 = len(path_i)
+    # temp = [20 for _ in range(len1)]
+    # path_i += np.array(temp)
+
     t2 = time.clock()
     logging.info("Built table (full backtrace) in {} seconds"
                  .format(t2 - t1))
@@ -655,7 +665,7 @@ def _generate_audio(songs, beats, new_beats, new_beats_cost, music_labels,
                           for song in songs])
 
     audio_segments = []
-    segment_song_indicies = [new_beats[0][0]]
+    segment_song_indicies = [new_beats[0][0]] #store the transition between songs [0,1,0,1,2] if 0 1 and 2 are songs
     current_seg = [0, 0]
     if new_beats[0][0] == 'p':
         current_seg = 'p'
@@ -677,9 +687,10 @@ def _generate_audio(songs, beats, new_beats, new_beats_cost, music_labels,
     segment_song_indicies = [x for x in segment_song_indicies if x != 'p']
 
     beats = [np.array(b) for b in beats]
-    score_start = 0
+    # score_start = 0
     current_loc = 0.0
-    last_segment_beat = 0
+    current_loc1 = 0.0
+    # last_segment_beat = 0
 
     comp.add_tracks(songs)
 
@@ -688,27 +699,67 @@ def _generate_audio(songs, beats, new_beats, new_beats_cost, music_labels,
     aseg_fade_ins = []
 
     logging.info("Building audio")
-    for (aseg, song_i) in zip(audio_segments, segment_song_indicies):
+    beat_starting = 0
+    num = 0
+    for song_i in segment_song_indicies:
         segments = []
         # TODO: is this +1 correct?
-        starts = np.array([x[1] for x in new_beats[aseg[0]:aseg[1] + 1]])
+        for num in range(beat_starting, len(new_beats)):
+            if(new_beats[num][0] != song_i):
+                break
+        #for the same song beats lies from beat_starting to num
 
-        bis = [np.nonzero(beats[song_i] == b)[0][0] for b in starts]
-        dists = np.zeros(len(starts))
-        durs = np.zeros(len(starts))
 
-        for i, beat in enumerate(starts):
-            if i < len(bis) - 1:
-                if bis[i] + 1 != bis[i + 1]:
-                    dists[i + 1] = 1
-            if bis[i] + 1 >= len(beats[song_i]):
+
+        #starts = np.array([x[1] for x in new_beats[aseg[0]:aseg[1] + 1]]) #beat location array (0,0.215) -- array of second element
+
+
+        starts1 = np.array([x[1] for x in new_beats[beat_starting:num]])
+        beat_starting = num
+
+        #array of all selected beats irrespective of song index
+
+        #return index of the matching beat of beats[m] array where m is the song no.
+        #bis = [np.nonzero(beats[song_i] == b)[0][0] for b in starts]
+
+        bis1 = [np.nonzero(beats[song_i] == b)[0][0] for b in starts1]
+
+        #dists = np.zeros(len(starts))
+        #durs = np.zeros(len(starts))
+
+        # for i, beat in enumerate(starts):
+        #     if i < len(bis) - 1:
+        #         if bis[i] + 1 != bis[i + 1]:
+        #             dists[i + 1] = 1
+        #     if bis[i] + 1 >= len(beats[song_i]):
+        #         # use the average beat duration if we don't know
+        #         # how long the beat is supposed to be
+        #         logging.warning("USING AVG BEAT DURATION IN SYNTHESIS -\
+        #             POTENTIALLY NOT GOOD")
+        #         durs[i] = songs[song_i].analysis[BEAT_DUR_KEY]
+        #     else:
+        #         durs[i] = beats[song_i][bis[i] + 1] - beats[song_i][bis[i]]
+
+        dists1 = np.zeros(len(starts1))
+        durs1 = np.zeros(len(starts1))
+        for i, beat in enumerate(starts1):
+            if i < len(bis1) - 1:
+                if bis1[i] + 1 != bis1[i + 1]:
+                    dists1[i + 1] = 1
+            if bis1[i] + 1 >= len(beats[song_i]):
                 # use the average beat duration if we don't know
                 # how long the beat is supposed to be
                 logging.warning("USING AVG BEAT DURATION IN SYNTHESIS -\
                     POTENTIALLY NOT GOOD")
-                durs[i] = songs[song_i].analysis[BEAT_DUR_KEY]
+                durs1[i] = songs[song_i].analysis[BEAT_DUR_KEY]
             else:
-                durs[i] = beats[song_i][bis[i] + 1] - beats[song_i][bis[i]]
+                durs1[i] = beats[song_i][bis1[i] + 1] - beats[song_i][bis1[i]]
+
+
+
+
+
+
 
         # add pause duration to current location
         # current_loc +=\
@@ -716,46 +767,79 @@ def _generate_audio(songs, beats, new_beats, new_beats_cost, music_labels,
             #      song.analysis[BEAT_DUR_KEY]
 
         # catch up to the pause
-        current_loc = max(
-            aseg[0] * beat_length,
-            current_loc)
+        # current_loc = max(
+        #     aseg[0] * beat_length,
+        #     current_loc)
 
-        last_segment_beat = aseg[1] + 1
+        current_loc1 = max(0,current_loc1)
+        # last_segment_beat = aseg[1] + 1
 
         cf_durations = []
-        seg_start = starts[0]
-        seg_start_loc = current_loc
+        # seg_start = starts[0]
+        # seg_start_loc = current_loc
 
         cf_locations = []
 
-        segment_starts = [0]
+        # segment_starts = [0] # 0 or not
+        # try:
+        #     segment_starts.extend(np.where(dists == 1)[0])
+        # except:
+        #     pass
+
+        cf_durations1 = []
+        cf_locations1 = []
+        segment_starts1 = [0]  # 0 or not
         try:
-            segment_starts.extend(np.where(dists == 1)[0])
+            segment_starts1.extend(np.where(dists1 == 1)[0])
         except:
             pass
 
+
         # print "segment starts", segment_starts
 
-        for i, s_i in enumerate(segment_starts):
-            if i == len(segment_starts) - 1:
+        # for i, s_i in enumerate(segment_starts):
+        #     if i == len(segment_starts) - 1:
+        #         # last segment?
+        #         seg_duration = np.sum(durs[s_i:])
+        #     else:
+        #         next_s_i = segment_starts[i + 1]
+        #         seg_duration = np.sum(durs[s_i:next_s_i])
+        #
+        #         cf_durations.append(durs[next_s_i])
+        #         cf_locations.append(current_loc + seg_duration)
+        #
+        #     seg_music_location = starts[s_i]
+        #
+        #     seg = Segment(songs[song_i], current_loc,
+        #                   seg_music_location, seg_duration)
+        #
+        #     segments.append(seg)
+        #
+        #     # update location for next segment
+        #     current_loc += seg_duration
+
+        for i, s_i in enumerate(segment_starts1):
+            if i == len(segment_starts1) - 1:
                 # last segment?
-                seg_duration = np.sum(durs[s_i:])
+                seg_duration = np.sum(durs1[s_i:])
             else:
-                next_s_i = segment_starts[i + 1]
-                seg_duration = np.sum(durs[s_i:next_s_i])
+                next_s_i = segment_starts1[i + 1]
+                seg_duration = np.sum(durs1[s_i:next_s_i])
 
-                cf_durations.append(durs[next_s_i])
-                cf_locations.append(current_loc + seg_duration)
+                cf_durations1.append(durs1[next_s_i])
+                cf_locations1.append(current_loc1 + seg_duration)
 
-            seg_music_location = starts[s_i]
+            seg_music_location = starts1[s_i]
 
-            seg = Segment(songs[song_i], current_loc,
+            #seg_music_location actual location of music segment in song
+            #current_loc location of music in new segment
+            seg = Segment(songs[song_i], current_loc1,
                           seg_music_location, seg_duration)
 
             segments.append(seg)
 
             # update location for next segment
-            current_loc += seg_duration
+            current_loc1 += seg_duration
 
         # for i, start in enumerate(starts):
         #     dur = durs[i]
@@ -800,9 +884,9 @@ def _generate_audio(songs, beats, new_beats, new_beats_cost, music_labels,
             result_volume = np.zeros(new_volume_array.shape)
 
         for i, seg in enumerate(segments[:-1]):
-            logging.info(cf_durations[i], seg.duration_in_seconds,
+            logging.info(cf_durations1[i], seg.duration_in_seconds,
                          segments[i + 1].duration_in_seconds)
-            rawseg = comp.cross_fade(seg, segments[i + 1], cf_durations[i])
+            rawseg = comp.cross_fade(seg, segments[i + 1], cf_durations1[i])
 
             # decrease volume along crossfades
             volume_frames = volume_array[
@@ -872,7 +956,7 @@ def _generate_audio(songs, beats, new_beats, new_beats_cost, music_labels,
                           sn.comp_location + sn.duration] *=\
                 fade_out.to_array(channels=1).flatten()
 
-        all_cf_locations.extend(cf_locations)
+        all_cf_locations.extend(cf_locations1)
 
     # result labels
     label_time = 0.0

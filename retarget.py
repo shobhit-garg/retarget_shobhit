@@ -65,11 +65,11 @@ if not args.quiet: print "Retargeting..."
 
 if args.cache is not None: args.cache.makedirs_p()
 song = Song(inpath, cache_dir = str(args.cache))
-
+song1 = Song('/Users/shgarg/workspace/audio-retargeting/testfiles/song10.wav', cache_dir = str(args.cache))
 if change_points:
     composition, change_points = retarget.retarget_with_change_points(song, change_points, length)
 else:
-    composition = retarget.retarget_to_length(song, length, start=args.start, end=args.end)
+    composition = retarget.retarget_to_length([song1,song], length, start=args.start, end=args.end)
 
 composition.export(filename=outpath.stripext())
 if not args.quiet: print "Wrote {0}".format(outpath)
